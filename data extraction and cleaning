@@ -1,0 +1,95 @@
+import numpy as np
+import pandas as pd
+import plotly.express as px
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set()
+
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Lasso,Ridge
+from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.svm import SVR
+from xgboost import XGBRegressor
+from sklearn.metrics import r2_score,mean_absolute_error,mean_squared_error
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
+from matplotlib import colors
+from matplotlib.colors import ListedColormap
+from sklearn.metrics import r2_score,mean_absolute_error,mean_squared_error
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.neighbors import KNeighborsRegressor
+
+
+
+%matplotlib inline
+plt.rcParams["figure.figsize"] = (12, 6)
+sns.set_style("whitegrid")
+import warnings
+
+warnings.filterwarnings("ignore")
+warnings.warn("this will not show")
+pd.set_option('display.float_format', lambda x: '%.3f' % x)
+
+
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+# Download the dataset
+!kaggle datasets download -d gauravmalik26/food-delivery-dataset
+
+# Extract the dataset
+!unzip -o food-delivery-dataset.zip
+
+# Assuming the CSV file is named 'train.csv'
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+sample= pd.read_csv('Sample_Submission.csv')
+
+train.columns
+train.head()
+
+train.replace({"NaN": np.nan}, regex=True, inplace = True)
+test.replace({"NaN": np.nan}, regex=True, inplace = True)
+train.info()
+for column in train.select_dtypes(include=['number']):
+    train[column] = train[column].fillna(train[column].median())
+train.describe()
+
+for column in test.select_dtypes(include=['number']):
+    test[column] = test[column].fillna(test[column].median())
+test.describe()
+
+
+def fillna_with_mode(column):
+    mode_value = column.mode()[0]  # Find the most frequent value
+    return column.fillna(mode_value)  # Replace NaN with the mode
+
+# Apply the function to each object column
+train[train.select_dtypes(include=['object']).columns] = train.select_dtypes(include=['object']).apply(fillna_with_mode)
+test[test.select_dtypes(include=['object']).columns] = test.select_dtypes(include=['object']).apply(fillna_with_mode)
+
+train.drop('ID',axis=1,inplace=True)
+test.drop('ID',axis=1,inplace=True)
+
+obj = train.select_dtypes(include=['object'])
+for i in obj.columns:
+    print(train[i].value_counts().head(5))
+    print('*************')
+
+train['Dest_City']=train['Delivery_person_ID'].str.split('RES',expand=True)[0]
+test['Dest_City']=test['Delivery_person_ID'].str.split('RES',expand=True)[0]
+train['Dest_City'].nunique()
+
+train['Dest_City'].value_counts()
+
+train.drop(['Delivery_person_ID'],axis=1,inplace=True)
+test.drop(['Delivery_person_ID'],axis=1,inplace=True)
+
+train['Delivery_person_Age'] = train['Delivery_person_Age'].astype('float')
+test['Delivery_person_Age'] = test['Delivery_person_Age'].astype('float')
