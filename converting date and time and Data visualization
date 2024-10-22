@@ -1,0 +1,269 @@
+import numpy as np
+import pandas as pd
+import plotly.express as px
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set()
+
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Lasso,Ridge
+from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.svm import SVR
+from xgboost import XGBRegressor
+from sklearn.metrics import r2_score,mean_absolute_error,mean_squared_error
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, EarlyStopping
+from matplotlib import colors
+from matplotlib.colors import ListedColormap
+from sklearn.metrics import r2_score,mean_absolute_error,mean_squared_error
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.neighbors import KNeighborsRegressor
+
+
+
+%matplotlib inline
+plt.rcParams["figure.figsize"] = (12, 6)
+sns.set_style("whitegrid")
+import warnings
+
+warnings.filterwarnings("ignore")
+warnings.warn("this will not show")
+pd.set_option('display.float_format', lambda x: '%.3f' % x)
+
+
+!mkdir -p ~/.kaggle
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+# Download the dataset
+!kaggle datasets download -d gauravmalik26/food-delivery-dataset
+
+# Extract the dataset
+!unzip -o food-delivery-dataset.zip
+
+# Assuming the CSV file is named 'train.csv'
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+sample= pd.read_csv('Sample_Submission.csv')
+
+train.columns
+train.head()
+
+train.replace({"NaN": np.nan}, regex=True, inplace = True)
+test.replace({"NaN": np.nan}, regex=True, inplace = True)
+train.info()
+for column in train.select_dtypes(include=['number']):
+    train[column] = train[column].fillna(train[column].median())
+train.describe()
+
+for column in test.select_dtypes(include=['number']):
+    test[column] = test[column].fillna(test[column].median())
+test.describe()
+
+
+def fillna_with_mode(column):
+    mode_value = column.mode()[0]  # Find the most frequent value
+    return column.fillna(mode_value)  # Replace NaN with the mode
+
+# Apply the function to each object column
+train[train.select_dtypes(include=['object']).columns] = train.select_dtypes(include=['object']).apply(fillna_with_mode)
+test[test.select_dtypes(include=['object']).columns] = test.select_dtypes(include=['object']).apply(fillna_with_mode)
+
+train.drop('ID',axis=1,inplace=True)
+test.drop('ID',axis=1,inplace=True)
+
+obj = train.select_dtypes(include=['object'])
+for i in obj.columns:
+    print(train[i].value_counts().head(5))
+    print('*************')
+
+train['Dest_City']=train['Delivery_person_ID'].str.split('RES',expand=True)[0]
+test['Dest_City']=test['Delivery_person_ID'].str.split('RES',expand=True)[0]
+train['Dest_City'].nunique()
+
+train['Dest_City'].value_counts()
+
+train.drop(['Delivery_person_ID'],axis=1,inplace=True)
+test.drop(['Delivery_person_ID'],axis=1,inplace=True)
+
+train['Delivery_person_Age'] = train['Delivery_person_Age'].astype('float')
+test['Delivery_person_Age'] = test['Delivery_person_Age'].astype('float')
+#PLOT DISTRIBUTION OF DELIVERY PERSON AGE
+plt.figure(figsize=(10, 6))
+sns.displot(train['Delivery_person_Age'], kde=True, color='skyblue', bins=30)
+plt.title('Distribution of Delivery Person Age', fontsize=16, fontweight='bold')
+plt.xlabel('Age', fontsize=12)
+plt.ylabel('Frequency', fontsize=12)
+plt.show()
+
+print('DELIVERY PERSON WHO ARE MINOR : ',train[train['Delivery_person_Age']<18].shape[0])
+
+train['Delivery_person_Ratings']=train['Delivery_person_Ratings'].astype('float64')
+
+test['Delivery_person_Ratings']=test['Delivery_person_Ratings'].astype('float64')
+
+plt.figure(figsize=(10, 6))
+sns.scatterplot(y=train['Delivery_person_Ratings'], x=train['Delivery_person_Age'], color='coral')
+plt.title('Distribution of Delivery Person Ratings', fontsize=16, fontweight='bold')
+plt.ylabel('Ratings', fontsize=12)
+plt.xlabel('Age', fontsize=12)
+plt.show()
+
+#CONVERT TO DATETIME
+train['Order_Date']=pd.to_datetime(train['Order_Date'])
+train['year']= train['Order_Date'].dt.year
+train['month']= train['Order_Date'].dt.month
+train['day']= train['Order_Date'].dt.day
+train.drop('Order_Date',inplace=True,axis=1)
+
+test['Order_Date']=pd.to_datetime(test['Order_Date'])
+test['year']= test['Order_Date'].dt.year
+test['month']= test['Order_Date'].dt.month
+test['day']= test['Order_Date'].dt.day
+test.drop('Order_Date',inplace=True,axis=1)
+
+#CLEAN TIME ORDERED HOUR
+train['Time_Orderd_Hour']=train['Time_Orderd'].str.split(':',expand=True)[0]
+train.dropna(subset=['Time_Orderd_Hour'],inplace=True)
+train['Time_Orderd_Hour']=train['Time_Orderd_Hour'].astype('int64')
+train['Time_Orderd_Min']=train['Time_Orderd'].str.split(':',expand=True)[1]
+train['Time_Orderd_Min']=train['Time_Orderd_Min'].astype('int64')
+
+
+#Time_Orderd_Hour, Time_Orderd_Min
+test['Time_Orderd_Hour']=test['Time_Orderd'].str.split(':',expand=True)[0]
+test.dropna(subset=['Time_Orderd_Hour'],inplace=True)
+test['Time_Orderd_Hour']=test['Time_Orderd_Hour'].astype('int64')
+test['Time_Orderd_Min']=test['Time_Orderd'].str.split(':',expand=True)[1]
+test['Time_Orderd_Min']=test['Time_Orderd_Min'].astype('int64')
+
+#Time_Order_picked_Hour
+train['Time_Order_picked_Hour']=train['Time_Order_picked'].str.split(":",expand=True)[0].astype('int')
+train['Time_Order_picked_Min']=train['Time_Order_picked'].str.split(":",expand=True)[1].astype('int')
+
+test['Time_Order_picked_Hour']=test['Time_Order_picked'].str.split(":",expand=True)[0].astype('int')
+test['Time_Order_picked_Min']=test['Time_Order_picked'].str.split(":",expand=True)[1].astype('int')
+
+#Restaurant_latitude, Restaurant_longitude
+train[['Restaurant_latitude','Restaurant_longitude']].describe()
+
+#PLOT GRAPH BETWEEN LATITUDE AND LONGITUDE
+fig = px.scatter_geo(
+    train,
+    lat='Restaurant_latitude',
+    lon='Restaurant_longitude',
+    template='plotly',
+    color_discrete_sequence=['blue']
+)
+
+fig.show()
+
+train[train['Restaurant_latitude']<0][['Restaurant_latitude','Restaurant_longitude']]
+train['Restaurant_latitude']=train['Restaurant_latitude'].abs()
+
+test[test['Restaurant_latitude']<0][['Restaurant_latitude','Restaurant_longitude']]
+test['Restaurant_latitude']=test['Restaurant_latitude'].abs()
+
+#TO CALCULATE DISTANCE
+import math
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    R = 6371
+    lat1 = math.radians(lat1)
+    lon1 = math.radians(lon1)
+    lat2 = math.radians(lat2)
+    lon2 = math.radians(lon2)
+
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = math.sin(dlat / 2) * 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) * 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(max(0,1 - a)))
+    distance = R * c
+    return distance
+
+train['distance'] = train.apply(lambda x:haversine_distance(x['Restaurant_latitude'], x['Restaurant_longitude'], x['Delivery_location_latitude'], x['Delivery_location_longitude']), axis=1)
+test['distance'] = test.apply(lambda x:haversine_distance(x['Restaurant_latitude'], x['Restaurant_longitude'], x['Delivery_location_latitude'], x['Delivery_location_longitude']), axis=1)
+
+
+#PLOT FOR CITY VS COUNT OF DELIVERY
+plt.figure(figsize=(15, 5))
+sns.countplot(data=train, x='Dest_City', palette='Set2')
+plt.xticks(rotation='vertical', fontsize=10)
+plt.xlabel('Destination City', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Deliveries by Destination City', fontsize=16, fontweight='bold')
+plt.show()
+
+
+plt.figure(figsize=(15, 5))
+sns.countplot(x=train['Dest_City'], hue=train['City'])
+plt.xticks(rotation='vertical', fontsize=10)
+plt.xlabel('Destination City', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Deliveries by Destination City and Source City', fontsize=16, fontweight='bold')
+plt.legend(title='Source City', fontsize=10)
+plt.show()
+
+
+plt.figure(figsize=(10, 4))
+sns.countplot(x=train['City'], hue=train['Type_of_order'])
+plt.xlabel('City', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Different Types of Orders by City', fontsize=16)
+plt.xticks(rotation=45, fontsize=10)
+plt.legend(title='Type of Order', fontsize=10)
+plt.show()
+
+
+plt.figure(figsize=(10, 4))
+sns.countplot(x=train['Type_of_order'], hue=train['Festival'])
+plt.xlabel('Type of Order', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Different Types of Orders During Festivals', fontsize=16)
+plt.legend(title='Festival', fontsize=10)
+plt.show()
+
+
+plt.figure(figsize=(10, 5))
+sns.countplot(x=train['Time_Orderd_Hour'])
+plt.xlabel('Hour of Order', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Orders by Hour', fontsize=16)
+plt.xticks(rotation='vertical', fontsize=10)
+plt.show()
+
+
+train['Time_taken(min)'] = train['Time_taken(min)'].str.extract('(\d+)').astype(float)
+
+
+plt.figure(figsize=(12, 6))
+city_order=train['City'].value_counts().index
+
+plt.subplot(1,2,1)
+sns.countplot(x=train['City'], palette='Set2', order=city_order)
+plt.xlabel('City', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Orders by City', fontsize=16, fontweight='bold')
+
+plt.subplot(1, 2, 2)
+rating = train.groupby('City')['Time_taken(min)'].mean().reset_index()
+sns.barplot(x='City', y='Time_taken(min)', data=rating, palette='Set2', order=city_order)
+plt.xlabel('City', fontsize=12)
+plt.ylabel('Average Time Taken (min)', fontsize=12)
+plt.title('Average Delivery Time by City', fontsize=16, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(6, 6))
+sns.countplot(x=train['Type_of_vehicle'], palette='Set2')
+plt.xlabel('Type of vehicle', fontsize=12)
+plt.ylabel('Count', fontsize=12)
+plt.title('Count of Vehicle Conditions by City', fontsize=16, fontweight='bold')
+plt.legend(title='City', fontsize=10)
+plt.show()
